@@ -171,3 +171,6 @@ cython_debug/
 #.idea/
 
 logs/
+
+# Training outputs (checkpoints are kept out of git)
+out/
