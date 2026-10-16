@@ -1,7 +1,10 @@
 # Versions that work with this repo's torch<2.6 pin (tested on 2026-10-14).
 # Unpinned, a fresh install picks a transformers too new for torch 2.5 and an
 # old datasets that breaks on current pyarrow.
-# Use with: uv pip install -e . -c constraints.txt   (Python 3.11)
+# triton (used by torch.compile) imports setuptools, which uv venvs don't include,
+# so install it explicitly or torch reports "Cannot find a working triton installation".
+# Use with: uv pip install -e . setuptools -c constraints.txt   (Python 3.11)
 torch==2.5.1
 transformers==4.48.3
 datasets==3.6.0
+setuptools==84.0.0
