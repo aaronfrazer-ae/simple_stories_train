@@ -51,7 +51,11 @@ from torch import Tensor
 from torch.distributed import destroy_process_group, init_process_group
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from simple_stories_train.dataloaders import DatasetConfig, create_data_loader
+from simple_stories_train.dataloaders import (
+    DatasetConfig,
+    create_data_loader,
+    repeat_with_reshuffle,
+)
 from simple_stories_train.models.llama import Llama
 from simple_stories_train.models.model_configs import MODEL_CONFIGS
 from simple_stories_train.utils import (
@@ -139,6 +143,11 @@ class Config(BaseModel):
     )
     intermediate_checkpoints: bool = Field(
         False, description="Save intermediate checkpoints (done at steps 0, 1, 2, 4, 8, ...)?"
+    )
+    repeat_train_data: bool = Field(
+        False,
+        description="When the train data runs out before num_iterations, start another pass over "
+        "it with the rows reshuffled (seeded) instead of ending training. Non-streaming only.",
     )
 
     @model_validator(mode="after")
@@ -243,7 +252,12 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
         ddp_rank=ddp_rank,
         ddp_world_size=ddp_world_size,
     )
-    train_loader = iter(train_loader)  # Is this the right way to sample from a Pytorch DataLoader?
+    if config.repeat_train_data:
+        train_seed = config.train_dataset_config.seed
+        train_loader = repeat_with_reshuffle(train_loader, seed=train_seed or 0)
+    else:
+        # Is this the right way to sample from a Pytorch DataLoader?
+        train_loader = iter(train_loader)
 
     val_loader, _ = create_data_loader(
         dataset_config=config.val_dataset_config,
@@ -253,7 +267,6 @@ def main(config_path_or_obj: Path | str | Config | None = None, **kwargs: Any) -
         ddp_rank=ddp_rank,
         ddp_world_size=ddp_world_size,
     )
-    val_loader = iter(val_loader)  # Is this the right way to sample from a Pytorch DataLoader?
 
     # -------------------------------------------------------------------------
     # main training loop

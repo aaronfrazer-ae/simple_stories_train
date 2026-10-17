@@ -35,3 +35,4 @@ val_loss_every: 50
 val_max_steps: 20
 sample_every: 100
 intermediate_checkpoints: false
+repeat_train_data: true # reshuffle and start another pass when the train data runs out

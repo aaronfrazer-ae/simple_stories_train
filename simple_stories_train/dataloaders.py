@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
@@ -7,8 +8,11 @@ from datasets.distributed import split_dataset_by_node
 from numpy.typing import NDArray
 from pydantic import BaseModel, ConfigDict
 from tokenizers import Tokenizer
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, RandomSampler
+from torch.utils.data import IterableDataset as TorchIterableDataset
 from transformers import AutoTokenizer
+
+from simple_stories_train.utils import print0
 
 """
 The bulk of this file is copied from https://github.com/ApolloResearch/e2e_sae
@@ -224,3 +228,38 @@ def create_data_loader(
         drop_last=True,
     )
     return loader, tokenizer
+
+
+def repeat_with_reshuffle(loader: DataLoader[Any], seed: int) -> Iterator[Any]:
+    """Yield batches from `loader` forever, one pass over the data after another.
+
+    The first pass keeps the loader's own order. Each later pass visits the same rows in a new
+    order, from a permutation seeded by `seed + pass_index`, so runs are reproducible. Only
+    map-style (non-streaming) datasets are supported.
+    """
+    dataset = loader.dataset
+    if isinstance(dataset, IterableDataset | TorchIterableDataset):
+        raise ValueError("repeat_with_reshuffle does not support streaming datasets")
+    pass_index = 0
+    while True:
+        if pass_index == 0:
+            pass_loader = loader
+        else:
+            generator = torch.Generator().manual_seed(seed + pass_index)
+            pass_loader = DataLoader[Any](
+                dataset,
+                batch_size=loader.batch_size,
+                sampler=RandomSampler(dataset, generator=generator),  # type: ignore
+                drop_last=loader.drop_last,
+            )
+        n_batches = 0
+        for batch in pass_loader:
+            n_batches += 1
+            yield batch
+        if n_batches == 0:
+            raise ValueError("The data loader yielded no batches")
+        pass_index += 1
+        print0(
+            f"train data: pass {pass_index} done ({n_batches} batches), "
+            f"starting pass {pass_index + 1} with rows reshuffled (seed {seed + pass_index})"
+        )
